@@ -50,7 +50,7 @@ def import_image(region, name, architecture, image, public):
     """Import an AMI image"""
     client = boto3.client('ec2', region_name=region)
     resource = boto3.resource('ec2', region_name=region)
-    description = '%s (%s)' % (name, architecture)
+    description = f'{name} ({architecture})'
     snapshot_id = create_snapshot(region=region, description=description,
                                   image=image)
     client.get_waiter('snapshot_completed').wait(SnapshotIds=[snapshot_id])
@@ -100,7 +100,7 @@ architectures = {image: detect_architecture(image) for image in args.image}
 
 # Use default name if none specified
 if not args.name:
-    args.name = 'iPXE (%s)' % date.today().strftime('%Y-%m-%d')
+    args.name = f"iPXE ({date.today().strftime('%Y-%m-%d')})"
 
 # Use all regions if none specified
 if not args.region:
@@ -121,19 +121,20 @@ with ThreadPoolExecutor(max_workers=len(imports)) as executor:
                for future in as_completed(futures)}
 
 # Construct Dokuwiki table
-wikitab = ["^ AWS region  ^ CPU architecture  ^ AMI ID  ^\n"] + list(
-    "| ''%s''  | ''%s''  | ''[[%s|%s]]''  |\n" % (
+wikitab = ["^ AWS region  ^ CPU architecture  ^ AMI ID  ^\n"] + [
+    "| ''%s''  | ''%s''  | ''[[%s|%s]]''  |\n"
+    % (
         region,
         architectures[image],
         launch_link(region, results[(region, image)]),
         results[(region, image)],
-    ) for region, image in imports)
+    )
+    for region, image in imports
+]
 if args.wiki:
     with open(args.wiki, 'wt') as fh:
         fh.writelines(wikitab)
 
 # Show created images
 for region, image in imports:
-    print("%s %s %s %s" % (
-        region, image, architectures[image], results[(region, image)]
-    ))
+    print(f"{region} {image} {architectures[image]} {results[region, image]}")
