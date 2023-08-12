@@ -86,9 +86,7 @@ class KeyModifiers(Flag):
             return 0
         if self == self.SHIFT:
             return 1
-        if self == self.CTRL:
-            return 2
-        return 3 + bin(self.value).count('1')
+        return 2 if self == self.CTRL else 3 + bin(self.value).count('1')
 
 
 @dataclass(frozen=True)
@@ -137,9 +135,7 @@ class Key:
             char = chr(value)
             if value and char.isascii():
                 return char
-        if keytype == KeyType.DEAD:
-            return self.DEAD_KEYS.get(value)
-        return None
+        return self.DEAD_KEYS.get(value) if keytype == KeyType.DEAD else None
 
 
 class KeyLayout(UserDict[KeyModifiers, Sequence[Key]]):
@@ -287,20 +283,19 @@ class KeymapKeys(UserDict[str, Optional[str]]):
     def ascii_name(cls, char: str) -> str:
         """ASCII character name"""
         if char == '\\':
-            name = "'\\\\'"
+            return "'\\\\'"
         elif char == '\'':
-            name = "'\\\''"
+            return "'\\\''"
         elif ord(char) & BiosKeyLayout.KEY_PSEUDO:
-            name = "Pseudo-%s" % cls.ascii_name(
+            return "Pseudo-%s" % cls.ascii_name(
                 chr(ord(char) & ~BiosKeyLayout.KEY_PSEUDO)
             )
         elif char.isprintable():
-            name = "'%s'" % char
+            return f"'{char}'"
         elif ord(char) <= 0x1a:
-            name = "Ctrl-%c" % (ord(char) + 0x40)
+            return "Ctrl-%c" % (ord(char) + 0x40)
         else:
-            name = "0x%02x" % ord(char)
-        return name
+            return "0x%02x" % ord(char)
 
     @property
     def code(self):
@@ -346,18 +341,17 @@ class Keymap:
         # away the whole lower-case alphabet)
         while True:
             unreachable = set(table.keys()) - set(table.values())
-            delete = {x for x in unreachable if x.isascii() and x.isalnum()}
-            if not delete:
+            if delete := {x for x in unreachable if x.isascii() and x.isalnum()}:
+                table = {k: v for k, v in table.items() if k not in delete}
+            else:
                 break
-            table = {k: v for k, v in table.items() if k not in delete}
         # Sanity check: ensure that all numerics are reachable using
         # the same shift state
         digits = '1234567890'
         unshifted = ''.join(table.get(x) or x for x in '1234567890')
         shifted = ''.join(table.get(x) or x for x in '!@#$%^&*()')
         if digits not in (shifted, unshifted):
-            raise ValueError("Inconsistent numeric remapping %s / %s" %
-                             (unshifted, shifted))
+            raise ValueError(f"Inconsistent numeric remapping {unshifted} / {shifted}")
         return KeymapKeys(dict(sorted(table.items())))
 
     @property
@@ -374,8 +368,7 @@ class Keymap:
         }
         # Identify printable keys that are unreachable via the basic map
         basic = self.basic
-        unmapped = set(x for x in basic.keys()
-                       if x.isascii() and x.isprintable())
+        unmapped = {x for x in basic.keys() if x.isascii() and x.isprintable()}
         remapped = set(basic.values())
         unreachable = unmapped - remapped
         # Eliminate any mappings for unprintable characters, or
@@ -393,7 +386,7 @@ class Keymap:
 
     def cname(self, suffix: str) -> str:
         """C variable name"""
-        return re.sub(r'\W', '_', (self.name + '_' + suffix))
+        return re.sub(r'\W', '_', f'{self.name}_{suffix}')
 
     @property
     def code(self) -> str:
@@ -402,7 +395,9 @@ class Keymap:
         basic_name = self.cname("basic")
         altgr_name = self.cname("altgr")
         attribute = "__keymap_default" if self.name == "us" else "__keymap"
-        code = textwrap.dedent(f"""
+        return (
+            textwrap.dedent(
+                f"""
         /** @file
          *
          * "{self.name}" keyboard mapping
@@ -427,8 +422,10 @@ class Keymap:
         \t.basic = {basic_name},
         \t.altgr = {altgr_name},
         }};
-        """).strip() % (self.basic.code, self.altgr.code)
-        return code
+        """
+            ).strip()
+            % (self.basic.code, self.altgr.code)
+        )
 
 
 if __name__ == '__main__':
